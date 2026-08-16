@@ -6,13 +6,13 @@ import "./globals.css";
 
 const display = Space_Grotesk({
   variable: "--font-display",
-  subsets: ["latin", "cyrillic"],
+  subsets: ["latin"],
   weight: ["500", "700"],
 });
 
 const body = Inter({
   variable: "--font-body",
-  subsets: ["latin"],
+  subsets: ["latin", "cyrillic"],
 });
 
 export const metadata: Metadata = {
