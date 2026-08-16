@@ -12,7 +12,7 @@ const display = Space_Grotesk({
 
 const body = Inter({
   variable: "--font-body",
-  subsets: ["latin", "cyrillic"],
+  subsets: ["latin"],
 });
 
 export const metadata: Metadata = {
