@@ -189,13 +189,12 @@ export default function PromptForm() {
           <div className="flex gap-2">
             <button
               onClick={() => runGeneration(prompt)}
-              disabled={status === "loading"}
               className="flex-1 py-2.5 rounded-xl text-sm border font-display"
               style={{ borderColor: "var(--border)", color: "var(--text)" }}
             >
               🔁 Ещё раз
             </button>
-            <a
+            
               href={resultUrl}
               target="_blank"
               rel="noreferrer"
