@@ -7,15 +7,17 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL;
 const WELCOME_TEXT = [
   "🎞 <b>Imagen Lab</b>",
   "",
-  "Опишите картинку словами — я нарисую её за несколько секунд.",
+  "Просто напишите мне текст прямо здесь, в чате — и я нарисую картинку.",
   "Например: <i>«лиса в осеннем лесу, мультяшный стиль»</i>",
+  "",
+  "А если хочется выбирать стиль и пропорции кнопками — нажмите ниже, откроется полноценное приложение с галереей.",
   "",
   `Лимит: ${DAILY_LIMIT} картинок в сутки.`,
 ].join("\n");
 
 function openAppKeyboard() {
   if (!APP_URL) return undefined;
-  return Markup.inlineKeyboard([[Markup.button.webApp("🖼 Открыть галерею", APP_URL)]]);
+  return Markup.inlineKeyboard([[Markup.button.webApp("🎨 Открыть приложение", APP_URL)]]);
 }
 
 let cached: Telegraf | null = null;
