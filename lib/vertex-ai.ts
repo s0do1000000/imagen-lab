@@ -31,6 +31,9 @@ interface GeneratedImage {
   mimeType: string;
 }
 
+const VALID_ASPECT_RATIOS = ["1:1", "3:4", "4:3", "9:16", "16:9"] as const;
+export type AspectRatio = (typeof VALID_ASPECT_RATIOS)[number];
+
 /**
  * Sends a text prompt to Gemini 2.5 Flash Image (Vertex AI / Agent Platform)
  * and returns the first generated image as a raw buffer.
@@ -38,7 +41,10 @@ interface GeneratedImage {
  * Throws on any API-level or auth error — callers should catch and turn
  * this into a user-facing message (see lib/generate-image.ts).
  */
-export async function generateImage(prompt: string): Promise<GeneratedImage> {
+export async function generateImage(
+  prompt: string,
+  aspectRatio: AspectRatio = "1:1"
+): Promise<GeneratedImage> {
   if (!PROJECT_ID) {
     throw new Error("GOOGLE_CLOUD_PROJECT_ID is not set.");
   }
@@ -59,6 +65,9 @@ export async function generateImage(prompt: string): Promise<GeneratedImage> {
       },
       generation_config: {
         response_modalities: ["TEXT", "IMAGE"],
+        image_config: {
+          aspect_ratio: VALID_ASPECT_RATIOS.includes(aspectRatio) ? aspectRatio : "1:1",
+        },
       },
     }),
   });

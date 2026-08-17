@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { getInitData, initTelegramWebApp } from "@/lib/telegram-webapp";
 
 const STYLE_PRESETS = [
+  { label: "Фотореалистично", suffix: "photorealistic, DSLR photo, sharp focus, natural lighting" },
   { label: "Мультяшно", suffix: "cute cartoon style, soft colors" },
   { label: "Акварель", suffix: "watercolor painting style" },
   { label: "Плёнка 35мм", suffix: "35mm film photo, grainy, warm tones" },
@@ -12,11 +13,18 @@ const STYLE_PRESETS = [
   { label: "Минимализм", suffix: "minimalist flat design, clean lines" },
 ];
 
+const ASPECT_RATIOS = [
+  { value: "1:1", label: "Квадрат" },
+  { value: "3:4", label: "Портрет" },
+  { value: "16:9", label: "Пейзаж" },
+] as const;
+
 type Status = "idle" | "loading" | "error";
 
 export default function PromptForm() {
   const [prompt, setPrompt] = useState("");
-  const [style, setStyle] = useState<string | null>(null);
+  const [style, setStyle] = useState<string | null>(STYLE_PRESETS[0].suffix);
+  const [aspectRatio, setAspectRatio] = useState<(typeof ASPECT_RATIOS)[number]["value"]>("1:1");
   const [status, setStatus] = useState<Status>("idle");
   const [errorText, setErrorText] = useState("");
   const [resultUrl, setResultUrl] = useState<string | null>(null);
@@ -27,8 +35,8 @@ export default function PromptForm() {
     initTelegramWebApp();
   }, []);
 
-  async function handleGenerate() {
-    const trimmed = prompt.trim();
+  async function runGeneration(rawPrompt: string) {
+    const trimmed = rawPrompt.trim();
     if (!trimmed || status === "loading") return;
 
     setStatus("loading");
@@ -41,7 +49,7 @@ export default function PromptForm() {
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ initData: getInitData(), prompt: fullPrompt }),
+        body: JSON.stringify({ initData: getInitData(), prompt: fullPrompt, aspectRatio }),
       });
       const data = await res.json();
 
@@ -81,7 +89,7 @@ export default function PromptForm() {
 
       <div className="card overflow-hidden">
         <div className="sprocket-strip" />
-        <div className="p-4 space-y-3">
+        <div className="p-4 space-y-4">
           <textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
@@ -90,32 +98,60 @@ export default function PromptForm() {
             maxLength={500}
             className="w-full resize-none bg-transparent outline-none text-base placeholder:opacity-50"
           />
-          <div className="flex flex-wrap gap-2">
-            {STYLE_PRESETS.map((preset) => {
-              const active = style === preset.suffix;
-              return (
-                <button
-                  key={preset.label}
-                  type="button"
-                  onClick={() => setStyle(active ? null : preset.suffix)}
-                  className="px-3 py-1.5 rounded-full text-sm border transition-colors"
-                  style={{
-                    borderColor: active ? "var(--safelight)" : "var(--border)",
-                    background: active ? "var(--safelight-soft)" : "transparent",
-                    color: active ? "var(--safelight)" : "var(--muted)",
-                  }}
-                >
-                  {preset.label}
-                </button>
-              );
-            })}
+
+          <div>
+            <p className="label-eyebrow mb-2">Стиль</p>
+            <div className="flex flex-wrap gap-2">
+              {STYLE_PRESETS.map((preset) => {
+                const active = style === preset.suffix;
+                return (
+                  <button
+                    key={preset.label}
+                    type="button"
+                    onClick={() => setStyle(active ? null : preset.suffix)}
+                    className="px-3 py-1.5 rounded-full text-sm border transition-colors"
+                    style={{
+                      borderColor: active ? "var(--safelight)" : "var(--border)",
+                      background: active ? "var(--safelight-soft)" : "transparent",
+                      color: active ? "var(--safelight)" : "var(--muted)",
+                    }}
+                  >
+                    {preset.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <p className="label-eyebrow mb-2">Пропорции</p>
+            <div className="flex gap-2">
+              {ASPECT_RATIOS.map((ratio) => {
+                const active = aspectRatio === ratio.value;
+                return (
+                  <button
+                    key={ratio.value}
+                    type="button"
+                    onClick={() => setAspectRatio(ratio.value)}
+                    className="flex-1 py-2 rounded-xl text-sm border transition-colors"
+                    style={{
+                      borderColor: active ? "var(--safelight)" : "var(--border)",
+                      background: active ? "var(--safelight-soft)" : "transparent",
+                      color: active ? "var(--safelight)" : "var(--muted)",
+                    }}
+                  >
+                    {ratio.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
         <div className="sprocket-strip" />
       </div>
 
       <button
-        onClick={handleGenerate}
+        onClick={() => runGeneration(prompt)}
         disabled={!prompt.trim() || status === "loading"}
         className="w-full py-3.5 rounded-2xl font-display font-bold text-base disabled:opacity-40 transition-opacity"
         style={{ background: "var(--safelight)", color: "#171412" }}
@@ -145,9 +181,30 @@ export default function PromptForm() {
       )}
 
       {resultUrl && status !== "loading" && (
-        <div className="card overflow-hidden safelight-glow">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={resultUrl} alt={prompt} className="w-full aspect-square object-cover animate-develop" />
+        <div className="space-y-2">
+          <a href={resultUrl} target="_blank" rel="noreferrer" className="card overflow-hidden safelight-glow block">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={resultUrl} alt={prompt} className="w-full object-cover animate-develop" />
+          </a>
+          <div className="flex gap-2">
+            <button
+              onClick={() => runGeneration(prompt)}
+              disabled={status === "loading"}
+              className="flex-1 py-2.5 rounded-xl text-sm border font-display"
+              style={{ borderColor: "var(--border)", color: "var(--text)" }}
+            >
+              🔁 Ещё раз
+            </button>
+            <a
+              href={resultUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="flex-1 py-2.5 rounded-xl text-sm border font-display text-center"
+              style={{ borderColor: "var(--border)", color: "var(--text)" }}
+            >
+              ⤢ Открыть / сохранить
+            </a>
+          </div>
         </div>
       )}
     </div>

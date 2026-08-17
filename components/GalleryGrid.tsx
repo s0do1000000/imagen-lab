@@ -58,7 +58,13 @@ export default function GalleryGrid() {
       {items && items.length > 0 && (
         <div className="grid grid-cols-2 gap-3">
           {items.map((item) => (
-            <div key={item.id} className="card overflow-hidden">
+            <a
+              key={item.id}
+              href={item.image_url}
+              target="_blank"
+              rel="noreferrer"
+              className="card overflow-hidden block"
+            >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={item.image_url}
@@ -69,7 +75,7 @@ export default function GalleryGrid() {
               <p className="px-2 py-1.5 text-xs truncate" style={{ color: "var(--muted)" }}>
                 {item.prompt}
               </p>
-            </div>
+            </a>
           ))}
         </div>
       )}

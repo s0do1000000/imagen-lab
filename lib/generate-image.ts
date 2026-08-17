@@ -1,5 +1,5 @@
 import { supabaseServer } from "./supabase-server";
-import { generateImage } from "./vertex-ai";
+import { generateImage, type AspectRatio } from "./vertex-ai";
 import type { TelegramWebAppUser } from "./telegram";
 
 const DAILY_LIMIT = Number(process.env.DAILY_GENERATION_LIMIT ?? 15);
@@ -44,7 +44,8 @@ async function countRecentGenerations(telegramId: number): Promise<number> {
  */
 export async function generateAndStore(
   user: TelegramWebAppUser,
-  prompt: string
+  prompt: string,
+  aspectRatio: AspectRatio = "1:1"
 ): Promise<GenerateResult> {
   await upsertUser(user);
 
@@ -55,7 +56,7 @@ export async function generateAndStore(
 
   let image;
   try {
-    image = await generateImage(prompt);
+    image = await generateImage(prompt, aspectRatio);
   } catch (err) {
     console.error("generateImage failed:", err);
     return {
