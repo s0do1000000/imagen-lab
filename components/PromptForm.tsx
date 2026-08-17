@@ -194,7 +194,7 @@ export default function PromptForm() {
             >
               Ещё раз
             </button>
-            
+            <a
               href={resultUrl}
               target="_blank"
               rel="noreferrer"
