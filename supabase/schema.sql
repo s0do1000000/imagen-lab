@@ -26,6 +26,16 @@ create table if not exists generations (
 create index if not exists idx_generations_telegram_id on generations(telegram_id);
 create index if not exists idx_generations_created_at on generations(created_at);
 
+-- BOT_SESSIONS (one row per chat) — holds a pending photo file_id while
+-- waiting for the user's next text message with edit instructions.
+-- Needed because Vercel serverless functions don't share memory between
+-- webhook calls — see lib/bot-session-store.ts.
+create table if not exists bot_sessions (
+  telegram_id bigint primary key,
+  pending_photo_file_id text,
+  updated_at timestamptz not null default now()
+);
+
 -- ============================================================
 -- Row Level Security
 -- Everything here is written/read only via the server (service role key),
@@ -37,6 +47,7 @@ create index if not exists idx_generations_created_at on generations(created_at)
 
 alter table users enable row level security;
 alter table generations enable row level security;
+alter table bot_sessions enable row level security;
 
 -- ============================================================
 -- Storage

@@ -35,6 +35,43 @@ async function countRecentGenerations(telegramId: number): Promise<number> {
 }
 
 /**
+ * Shared tail end of the pipeline: upload the generated buffer to Storage,
+ * record the row, and compute the remaining quota. Both a fresh generation
+ * and a photo edit end up here once they have image bytes.
+ */
+async function storeResult(
+  user: TelegramWebAppUser,
+  prompt: string,
+  image: { buffer: Buffer; mimeType: string },
+  usedBeforeThisCall: number
+): Promise<GenerateResult> {
+  const ext = image.mimeType.includes("png") ? "png" : "jpg";
+  const path = `${user.id}/${Date.now()}.${ext}`;
+
+  const { error: uploadError } = await supabaseServer()
+    .storage.from(BUCKET)
+    .upload(path, image.buffer, { contentType: image.mimeType, upsert: false });
+
+  if (uploadError) {
+    console.error("Storage upload failed:", uploadError);
+    return { ok: false, error: "generation_failed", message: uploadError.message };
+  }
+
+  const { data: publicUrlData } = supabaseServer().storage.from(BUCKET).getPublicUrl(path);
+  const url = publicUrlData.publicUrl;
+
+  await supabaseServer().from("generations").insert({
+    telegram_id: user.id,
+    prompt: prompt.slice(0, 1000),
+    image_path: path,
+    image_url: url,
+  });
+
+  const remaining = Math.max(0, DAILY_LIMIT - usedBeforeThisCall - 1);
+  return { ok: true, url, remaining };
+}
+
+/**
  * Full pipeline: check quota → call Vertex AI → upload to Supabase Storage →
  * record the generation → return the public URL and remaining quota.
  *
@@ -66,30 +103,39 @@ export async function generateAndStore(
     };
   }
 
-  const ext = image.mimeType.includes("png") ? "png" : "jpg";
-  const path = `${user.id}/${Date.now()}.${ext}`;
+  return storeResult(user, prompt, image, used);
+}
 
-  const { error: uploadError } = await supabaseServer()
-    .storage.from(BUCKET)
-    .upload(path, image.buffer, { contentType: image.mimeType, upsert: false });
+/**
+ * Same pipeline, but edits an existing image (from a Telegram photo)
+ * instead of generating from scratch. Counts against the same daily quota
+ * as a normal generation — one edit = one generation, for simplicity.
+ */
+export async function editAndStore(
+  user: TelegramWebAppUser,
+  instruction: string,
+  inputImage: { buffer: Buffer; mimeType: string }
+): Promise<GenerateResult> {
+  await upsertUser(user);
 
-  if (uploadError) {
-    console.error("Storage upload failed:", uploadError);
-    return { ok: false, error: "generation_failed", message: uploadError.message };
+  const used = await countRecentGenerations(user.id);
+  if (used >= DAILY_LIMIT) {
+    return { ok: false, error: "limit_reached", remaining: 0 };
   }
 
-  const { data: publicUrlData } = supabaseServer().storage.from(BUCKET).getPublicUrl(path);
-  const url = publicUrlData.publicUrl;
+  let image;
+  try {
+    image = await generateImage(instruction, "1:1", inputImage);
+  } catch (err) {
+    console.error("editImage failed:", err);
+    return {
+      ok: false,
+      error: "generation_failed",
+      message: err instanceof Error ? err.message : "unknown error",
+    };
+  }
 
-  await supabaseServer().from("generations").insert({
-    telegram_id: user.id,
-    prompt: prompt.slice(0, 1000),
-    image_path: path,
-    image_url: url,
-  });
-
-  const remaining = Math.max(0, DAILY_LIMIT - used - 1);
-  return { ok: true, url, remaining };
+  return storeResult(user, `[edit] ${instruction}`, image, used);
 }
 
 export { DAILY_LIMIT };
