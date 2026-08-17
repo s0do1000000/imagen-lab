@@ -201,7 +201,7 @@ export default function PromptForm() {
               className="flex-1 py-2.5 rounded-xl text-sm border font-display text-center"
               style={{ borderColor: "var(--border)", color: "var(--text)" }}
             >
-              ⤢ Открыть / сохранить
+               Открыть / сохранить
             </a>
           </div>
         </div>
