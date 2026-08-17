@@ -1,12 +1,14 @@
 import { GoogleAuth } from "google-auth-library";
 
 const PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT_ID;
-const MODEL_ID = "veo-3.1-fast-generate-preview";
-// Google's own REST docs show a regional endpoint (e.g. us-central1) for
-// Veo, but that 404s in practice for this project — same symptom we hit
-// with the image model, which needed "global" instead. Using "global" here
-// too, consistent with lib/vertex-ai.ts.
-const BASE = `https://aiplatform.googleapis.com/v1/projects/${PROJECT_ID}/locations/global/publishers/google/models/${MODEL_ID}`;
+// Confirmed via Vertex AI Media Studio's "View Code" for this exact
+// project: the GA model ID (no "-preview" suffix) on the us-central1
+// regional endpoint. The "-preview" variant 404s — it's not in this
+// project's list of supported models, even though it's a valid Veo model
+// name in general.
+const MODEL_ID = "veo-3.1-fast-generate-001";
+const REGION = "us-central1";
+const BASE = `https://${REGION}-aiplatform.googleapis.com/v1/projects/${PROJECT_ID}/locations/${REGION}/publishers/google/models/${MODEL_ID}`;
 
 let cachedAuth: GoogleAuth | null = null;
 
