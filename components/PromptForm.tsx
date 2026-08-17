@@ -192,7 +192,7 @@ export default function PromptForm() {
               className="flex-1 py-2.5 rounded-xl text-sm border font-display"
               style={{ borderColor: "var(--border)", color: "var(--text)" }}
             >
-              🔁 Ещё раз
+              Ещё раз
             </button>
             
               href={resultUrl}
@@ -201,7 +201,7 @@ export default function PromptForm() {
               className="flex-1 py-2.5 rounded-xl text-sm border font-display text-center"
               style={{ borderColor: "var(--border)", color: "var(--text)" }}
             >
-               Открыть / сохранить
+              Открыть / сохранить
             </a>
           </div>
         </div>
