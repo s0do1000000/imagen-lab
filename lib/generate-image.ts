@@ -1,5 +1,6 @@
 import { supabaseServer } from "./supabase-server";
 import { generateImage, type AspectRatio } from "./vertex-ai";
+import { generateVideo, type VideoAspectRatio } from "./veo";
 import type { TelegramWebAppUser } from "./telegram";
 
 const DAILY_LIMIT = Number(process.env.DAILY_GENERATION_LIMIT ?? 15);
@@ -39,13 +40,20 @@ async function countRecentGenerations(telegramId: number): Promise<number> {
  * record the row, and compute the remaining quota. Both a fresh generation
  * and a photo edit end up here once they have image bytes.
  */
+function extensionForMimeType(mimeType: string): string {
+  if (mimeType.includes("png")) return "png";
+  if (mimeType.includes("mp4")) return "mp4";
+  if (mimeType.includes("webm")) return "webm";
+  return "jpg";
+}
+
 async function storeResult(
   user: TelegramWebAppUser,
   prompt: string,
   image: { buffer: Buffer; mimeType: string },
   usedBeforeThisCall: number
 ): Promise<GenerateResult> {
-  const ext = image.mimeType.includes("png") ? "png" : "jpg";
+  const ext = extensionForMimeType(image.mimeType);
   const path = `${user.id}/${Date.now()}.${ext}`;
 
   const { error: uploadError } = await supabaseServer()
@@ -136,6 +144,40 @@ export async function editAndStore(
   }
 
   return storeResult(user, `[edit] ${instruction}`, image, used);
+}
+
+/**
+ * Same pipeline, but generates a short video via Veo instead of an image.
+ * Counts against the same daily quota as a normal generation — one video =
+ * one generation, for simplicity (video is meaningfully more expensive
+ * per-unit, so consider lowering DAILY_GENERATION_LIMIT if opening this up
+ * beyond personal use).
+ */
+export async function videoAndStore(
+  user: TelegramWebAppUser,
+  prompt: string,
+  aspectRatio: VideoAspectRatio = "16:9"
+): Promise<GenerateResult> {
+  await upsertUser(user);
+
+  const used = await countRecentGenerations(user.id);
+  if (used >= DAILY_LIMIT) {
+    return { ok: false, error: "limit_reached", remaining: 0 };
+  }
+
+  let video;
+  try {
+    video = await generateVideo(prompt, aspectRatio);
+  } catch (err) {
+    console.error("generateVideo failed:", err);
+    return {
+      ok: false,
+      error: "generation_failed",
+      message: err instanceof Error ? err.message : "unknown error",
+    };
+  }
+
+  return storeResult(user, `[video] ${prompt}`, video, used);
 }
 
 export { DAILY_LIMIT };

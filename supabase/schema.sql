@@ -33,8 +33,13 @@ create index if not exists idx_generations_created_at on generations(created_at)
 create table if not exists bot_sessions (
   telegram_id bigint primary key,
   pending_photo_file_id text,
+  awaiting_video boolean not null default false,
   updated_at timestamptz not null default now()
 );
+
+-- Safe to re-run: adds the column if bot_sessions already existed from an
+-- earlier version of this schema (before video generation was added).
+alter table bot_sessions add column if not exists awaiting_video boolean not null default false;
 
 -- ============================================================
 -- Row Level Security

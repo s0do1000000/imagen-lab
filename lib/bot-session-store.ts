@@ -39,3 +39,29 @@ export async function getPendingPhoto(telegramId: number): Promise<string | null
 export async function clearPendingPhoto(telegramId: number): Promise<void> {
   await supabaseServer().from(TABLE).delete().eq("telegram_id", telegramId);
 }
+
+/**
+ * Marks that this chat's next text message should be treated as a video
+ * prompt (set after the user taps the "🎬 Видео" keyboard button), rather
+ * than a fresh image generation. Stored the same way as pending photos —
+ * same statelessness problem, same fix.
+ */
+export async function setAwaitingVideoPrompt(telegramId: number): Promise<void> {
+  await supabaseServer()
+    .from(TABLE)
+    .upsert({ telegram_id: telegramId, awaiting_video: true, updated_at: new Date().toISOString() }, { onConflict: "telegram_id" });
+}
+
+/** Returns true and clears the flag if this chat was waiting for a video prompt. */
+export async function consumeAwaitingVideoPrompt(telegramId: number): Promise<boolean> {
+  const { data } = await supabaseServer()
+    .from(TABLE)
+    .select("awaiting_video")
+    .eq("telegram_id", telegramId)
+    .maybeSingle();
+
+  if (!data?.awaiting_video) return false;
+
+  await supabaseServer().from(TABLE).update({ awaiting_video: false }).eq("telegram_id", telegramId);
+  return true;
+}
