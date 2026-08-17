@@ -1,11 +1,12 @@
 import { GoogleAuth } from "google-auth-library";
 
 const PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT_ID;
-// Veo is served regionally (unlike the Gemini image model, which needs
-// "global") — confirmed against Google's REST reference for this model.
 const MODEL_ID = "veo-3.1-fast-generate-preview";
-const REGION = "us-central1";
-const BASE = `https://${REGION}-aiplatform.googleapis.com/v1/projects/${PROJECT_ID}/locations/${REGION}/publishers/google/models/${MODEL_ID}`;
+// Google's own REST docs show a regional endpoint (e.g. us-central1) for
+// Veo, but that 404s in practice for this project — same symptom we hit
+// with the image model, which needed "global" instead. Using "global" here
+// too, consistent with lib/vertex-ai.ts.
+const BASE = `https://aiplatform.googleapis.com/v1/projects/${PROJECT_ID}/locations/global/publishers/google/models/${MODEL_ID}`;
 
 let cachedAuth: GoogleAuth | null = null;
 
