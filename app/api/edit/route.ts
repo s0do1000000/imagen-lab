@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyTelegramInitData } from "@/lib/telegram";
-import { editAndStore, DAILY_LIMIT } from "@/lib/generate-image";
+import { editAndStore } from "@/lib/generate-image";
 
 // Keeps the decoded buffer well under Vercel's serverless request body
 // limit (base64 already inflates size ~33% on the wire on top of this).
@@ -38,12 +38,12 @@ export async function POST(req: NextRequest) {
   });
 
   if (!result.ok) {
-    const status = result.error === "limit_reached" ? 429 : 502;
+    const status = result.error === "insufficient_credits" ? 402 : 502;
     return NextResponse.json(
-      { error: result.error, message: result.message, remaining: result.remaining ?? 0, limit: DAILY_LIMIT },
+      { error: result.error, message: result.message, remaining: result.remaining ?? 0 },
       { status }
     );
   }
 
-  return NextResponse.json({ url: result.url, remaining: result.remaining, limit: DAILY_LIMIT });
+  return NextResponse.json({ url: result.url, remaining: result.remaining });
 }

@@ -17,7 +17,6 @@ export default function VideoForm() {
   const [errorText, setErrorText] = useState("");
   const [resultUrl, setResultUrl] = useState<string | null>(null);
   const [remaining, setRemaining] = useState<number | null>(null);
-  const [limit, setLimit] = useState<number | null>(null);
 
   useEffect(() => {
     initTelegramWebApp();
@@ -40,12 +39,11 @@ export default function VideoForm() {
       const data = await res.json();
 
       if (!res.ok) {
-        setLimit(data.limit ?? null);
         setRemaining(data.remaining ?? 0);
         setStatus("error");
         setErrorText(
-          data.error === "limit_reached"
-            ? `Лимит на сегодня исчерпан (${data.limit}/сутки). Попробуйте завтра.`
+          data.error === "insufficient_credits"
+            ? `Недостаточно генераций (осталось: ${data.remaining ?? 0}). Пополните баланс через бота: /buy.`
             : data.error === "unauthorized"
               ? "Откройте приложение через кнопку в Telegram-боте — так проверяется, что это вы."
               : "Не получилось сгенерировать видео. Попробуйте более простой запрос."
@@ -55,7 +53,6 @@ export default function VideoForm() {
 
       setResultUrl(data.url);
       setRemaining(data.remaining);
-      setLimit(data.limit);
       setStatus("idle");
     } catch {
       setStatus("error");
@@ -121,9 +118,9 @@ export default function VideoForm() {
         {status === "loading" ? "Генерирую видео…" : "Сгенерировать"}
       </button>
 
-      {remaining !== null && limit !== null && (
+      {remaining !== null && (
         <p className="text-center text-xs" style={{ color: "var(--muted)" }}>
-          Осталось сегодня: {remaining}/{limit}
+          Баланс: {remaining} генераций
         </p>
       )}
 

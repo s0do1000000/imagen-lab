@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyTelegramInitData } from "@/lib/telegram";
-import { generateAndStore, DAILY_LIMIT } from "@/lib/generate-image";
+import { generateAndStore } from "@/lib/generate-image";
 import type { AspectRatio } from "@/lib/vertex-ai";
 
 const VALID_ASPECT_RATIOS: AspectRatio[] = ["1:1", "3:4", "4:3", "9:16", "16:9"];
@@ -28,12 +28,12 @@ export async function POST(req: NextRequest) {
   const result = await generateAndStore(verified.user, trimmedPrompt, safeAspectRatio);
 
   if (!result.ok) {
-    const status = result.error === "limit_reached" ? 429 : 502;
+    const status = result.error === "insufficient_credits" ? 402 : 502;
     return NextResponse.json(
-      { error: result.error, message: result.message, remaining: result.remaining ?? 0, limit: DAILY_LIMIT },
+      { error: result.error, message: result.message, remaining: result.remaining ?? 0 },
       { status }
     );
   }
 
-  return NextResponse.json({ url: result.url, remaining: result.remaining, limit: DAILY_LIMIT });
+  return NextResponse.json({ url: result.url, remaining: result.remaining });
 }

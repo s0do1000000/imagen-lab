@@ -1,6 +1,7 @@
 -- ============================================================
 -- Imagen Lab — Supabase schema
 -- Run this in Supabase → SQL Editor
+-- Safe to re-run in full any time — every statement is idempotent.
 -- ============================================================
 
 -- USERS (Telegram identity, no email/password auth needed)
@@ -10,10 +11,15 @@ create table if not exists users (
   username text,
   first_name text,
   last_name text,
+  credits integer not null default 1,
   created_at timestamptz not null default now()
 );
 
--- GENERATIONS (one row per generated image)
+-- Adds the column if `users` already existed from before monetization was
+-- added. New users still get 1 free credit via the column default above.
+alter table users add column if not exists credits integer not null default 1;
+
+-- GENERATIONS (one row per generated image/video)
 create table if not exists generations (
   id bigint generated always as identity primary key,
   telegram_id bigint not null,
@@ -37,22 +43,83 @@ create table if not exists bot_sessions (
   updated_at timestamptz not null default now()
 );
 
--- Safe to re-run: adds the column if bot_sessions already existed from an
--- earlier version of this schema (before video generation was added).
 alter table bot_sessions add column if not exists awaiting_video boolean not null default false;
+
+-- ORDERS (one row per purchase attempt — Stars orders are settled
+-- synchronously via Telegram's payment flow and don't strictly need a row,
+-- but TON orders need somewhere to hold the unique memo code while we wait
+-- for the blockchain payment to show up).
+create table if not exists orders (
+  id uuid primary key default gen_random_uuid(),
+  telegram_id bigint not null,
+  package_credits integer not null,
+  method text not null check (method in ('stars', 'ton')),
+  amount numeric not null,
+  memo text,
+  status text not null default 'pending' check (status in ('pending', 'paid', 'expired')),
+  created_at timestamptz not null default now(),
+  paid_at timestamptz
+);
+
+create index if not exists idx_orders_telegram_id on orders(telegram_id);
+create index if not exists idx_orders_memo on orders(memo);
+
+-- ============================================================
+-- Credit functions — atomic balance changes.
+-- Using SQL functions (not read-then-write from application code) avoids a
+-- race condition where two generations requested at nearly the same moment
+-- could both read "1 credit left" and both proceed, going negative.
+-- ============================================================
+
+create or replace function consume_credit(p_telegram_id bigint, p_cost integer)
+returns integer
+language plpgsql
+as $$
+declare
+  remaining integer;
+begin
+  update users
+  set credits = credits - p_cost
+  where telegram_id = p_telegram_id and credits >= p_cost
+  returning credits into remaining;
+
+  if remaining is null then
+    return -1; -- not enough credits
+  end if;
+
+  return remaining;
+end;
+$$;
+
+create or replace function add_credits(p_telegram_id bigint, p_amount integer)
+returns integer
+language plpgsql
+as $$
+declare
+  new_balance integer;
+begin
+  update users
+  set credits = credits + p_amount
+  where telegram_id = p_telegram_id
+  returning credits into new_balance;
+
+  return new_balance;
+end;
+$$;
 
 -- ============================================================
 -- Row Level Security
 -- Everything here is written/read only via the server (service role key),
 -- which bypasses RLS entirely — so no public policies are defined.
--- This forces every request through /api/generate and /api/gallery,
--- where Telegram initData is verified server-side (see lib/telegram.ts),
--- so nobody can read or spend another user's generations from the browser.
+-- This forces every request through the API routes, where Telegram
+-- initData is verified server-side (see lib/telegram.ts), so nobody can
+-- read or spend another user's credits from the browser.
 -- ============================================================
 
 alter table users enable row level security;
 alter table generations enable row level security;
 alter table bot_sessions enable row level security;
+alter table orders enable row level security;
 
 -- ============================================================
 -- Storage

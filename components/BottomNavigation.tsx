@@ -13,6 +13,11 @@ const TABS = [
 export default function BottomNavigation() {
   const pathname = usePathname();
 
+  // The /pay page is a standalone external page (opened via a plain link,
+  // not through Telegram) — it's not part of the Mini App's tab flow, so
+  // the app's navigation doesn't belong there.
+  if (pathname?.startsWith("/pay")) return null;
+
   return (
     <nav
       className="fixed bottom-0 inset-x-0 z-20 border-t"
