@@ -11,13 +11,21 @@ create table if not exists users (
   username text,
   first_name text,
   last_name text,
-  credits integer not null default 1,
+  credits integer not null default 0,
+  free_image_used boolean not null default false,
+  free_edit_used boolean not null default false,
+  free_video_used boolean not null default false,
   created_at timestamptz not null default now()
 );
 
--- Adds the column if `users` already existed from before monetization was
--- added. New users still get 1 free credit via the column default above.
-alter table users add column if not exists credits integer not null default 1;
+-- Adds the columns if `users` already existed from an earlier version of
+-- this schema. New users start with 0 paid credits — access before buying
+-- comes from the three free-trial flags below (one try per feature)
+-- instead of a single shared free credit.
+alter table users add column if not exists credits integer not null default 0;
+alter table users add column if not exists free_image_used boolean not null default false;
+alter table users add column if not exists free_edit_used boolean not null default false;
+alter table users add column if not exists free_video_used boolean not null default false;
 
 -- GENERATIONS (one row per generated image/video)
 create table if not exists generations (

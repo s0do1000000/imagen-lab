@@ -6,6 +6,8 @@ import type { TelegramWebAppUser } from "./telegram";
 
 const BUCKET = "generations";
 
+type FreeTrialColumn = "free_image_used" | "free_edit_used" | "free_video_used";
+
 export type GenerateResult =
   | { ok: true; url: string; remaining: number }
   | { ok: false; error: "insufficient_credits" | "generation_failed"; remaining?: number; message?: string };
@@ -22,6 +24,30 @@ async function upsertUser(user: TelegramWebAppUser) {
       },
       { onConflict: "telegram_id" }
     );
+}
+
+/**
+ * Tries to claim this user's one-time free trial for a specific feature
+ * (image / edit / video — each tracked separately, so a new user can try
+ * all three once before paying for any of them). The `.eq(column, false)`
+ * makes this a single atomic UPDATE at the database level — if two
+ * requests race, only one can flip false→true and get `true` back here.
+ */
+async function claimFreeTrial(telegramId: number, column: FreeTrialColumn): Promise<boolean> {
+  const { data } = await supabaseServer()
+    .from("users")
+    .update({ [column]: true })
+    .eq("telegram_id", telegramId)
+    .eq(column, false)
+    .select("telegram_id")
+    .maybeSingle();
+  return data !== null;
+}
+
+/** Un-claims a free trial — used when our own generation failed, so the
+ * user's one free try isn't wasted on our error. */
+async function revertFreeTrial(telegramId: number, column: FreeTrialColumn): Promise<void> {
+  await supabaseServer().from("users").update({ [column]: false }).eq("telegram_id", telegramId);
 }
 
 /**
@@ -91,9 +117,50 @@ async function storeResult(
 }
 
 /**
- * Full pipeline: check credit balance → call Vertex AI → upload to
- * Supabase Storage → record the generation → return the URL and remaining
- * balance. Shared by the Mini App API routes and lib/bot.ts.
+ * Shared gate in front of every feature: first use is free (per feature,
+ * via `freeColumn`), every use after that costs `cost` credits. Returns
+ * the balance to report back, or an insufficient-credits result to return
+ * immediately without calling the (paid) generation API at all.
+ */
+async function gateAccess(
+  telegramId: number,
+  freeColumn: FreeTrialColumn,
+  cost: number
+): Promise<{ ok: true; remaining: number; usedFreeTrial: boolean } | { ok: false; result: GenerateResult }> {
+  const gotFreeTrial = await claimFreeTrial(telegramId, freeColumn);
+  if (gotFreeTrial) {
+    return { ok: true, remaining: await getCreditBalance(telegramId), usedFreeTrial: true };
+  }
+
+  const remaining = await consumeCredits(telegramId, cost);
+  if (remaining === null) {
+    return {
+      ok: false,
+      result: { ok: false, error: "insufficient_credits", remaining: await getCreditBalance(telegramId) },
+    };
+  }
+  return { ok: true, remaining, usedFreeTrial: false };
+}
+
+/** Refunds whichever form of access was spent — a paid credit, or the free trial. */
+async function refundAccess(
+  telegramId: number,
+  freeColumn: FreeTrialColumn,
+  cost: number,
+  usedFreeTrial: boolean
+): Promise<void> {
+  if (usedFreeTrial) {
+    await revertFreeTrial(telegramId, freeColumn);
+  } else {
+    await supabaseServer().rpc("add_credits", { p_telegram_id: telegramId, p_amount: cost });
+  }
+}
+
+/**
+ * Full pipeline: first try free (once), then check credit balance → call
+ * Vertex AI → upload to Supabase Storage → record the generation → return
+ * the URL and remaining balance. Shared by the Mini App API routes and
+ * lib/bot.ts.
  */
 export async function generateAndStore(
   user: TelegramWebAppUser,
@@ -102,18 +169,15 @@ export async function generateAndStore(
 ): Promise<GenerateResult> {
   await upsertUser(user);
 
-  const remaining = await consumeCredits(user.id, IMAGE_CREDIT_COST);
-  if (remaining === null) {
-    return { ok: false, error: "insufficient_credits", remaining: await getCreditBalance(user.id) };
-  }
+  const gate = await gateAccess(user.id, "free_image_used", IMAGE_CREDIT_COST);
+  if (!gate.ok) return gate.result;
 
   let image;
   try {
     image = await generateImage(prompt, aspectRatio);
   } catch (err) {
     console.error("generateImage failed:", err);
-    // Refund the credit — the failure was ours, not a spent generation.
-    await supabaseServer().rpc("add_credits", { p_telegram_id: user.id, p_amount: IMAGE_CREDIT_COST });
+    await refundAccess(user.id, "free_image_used", IMAGE_CREDIT_COST, gate.usedFreeTrial);
     return {
       ok: false,
       error: "generation_failed",
@@ -121,7 +185,7 @@ export async function generateAndStore(
     };
   }
 
-  return storeResult(user, prompt, image, remaining);
+  return storeResult(user, prompt, image, gate.remaining);
 }
 
 /** Same pipeline, but edits an existing image (from a Telegram photo). */
@@ -132,17 +196,15 @@ export async function editAndStore(
 ): Promise<GenerateResult> {
   await upsertUser(user);
 
-  const remaining = await consumeCredits(user.id, IMAGE_CREDIT_COST);
-  if (remaining === null) {
-    return { ok: false, error: "insufficient_credits", remaining: await getCreditBalance(user.id) };
-  }
+  const gate = await gateAccess(user.id, "free_edit_used", IMAGE_CREDIT_COST);
+  if (!gate.ok) return gate.result;
 
   let image;
   try {
     image = await generateImage(instruction, "1:1", inputImage);
   } catch (err) {
     console.error("editImage failed:", err);
-    await supabaseServer().rpc("add_credits", { p_telegram_id: user.id, p_amount: IMAGE_CREDIT_COST });
+    await refundAccess(user.id, "free_edit_used", IMAGE_CREDIT_COST, gate.usedFreeTrial);
     return {
       ok: false,
       error: "generation_failed",
@@ -150,7 +212,7 @@ export async function editAndStore(
     };
   }
 
-  return storeResult(user, `[edit] ${instruction}`, image, remaining);
+  return storeResult(user, `[edit] ${instruction}`, image, gate.remaining);
 }
 
 /** Same pipeline, but generates a short video via Veo (costs more credits). */
@@ -161,17 +223,15 @@ export async function videoAndStore(
 ): Promise<GenerateResult> {
   await upsertUser(user);
 
-  const remaining = await consumeCredits(user.id, VIDEO_CREDIT_COST);
-  if (remaining === null) {
-    return { ok: false, error: "insufficient_credits", remaining: await getCreditBalance(user.id) };
-  }
+  const gate = await gateAccess(user.id, "free_video_used", VIDEO_CREDIT_COST);
+  if (!gate.ok) return gate.result;
 
   let video;
   try {
     video = await generateVideo(prompt, aspectRatio);
   } catch (err) {
     console.error("generateVideo failed:", err);
-    await supabaseServer().rpc("add_credits", { p_telegram_id: user.id, p_amount: VIDEO_CREDIT_COST });
+    await refundAccess(user.id, "free_video_used", VIDEO_CREDIT_COST, gate.usedFreeTrial);
     return {
       ok: false,
       error: "generation_failed",
@@ -179,5 +239,5 @@ export async function videoAndStore(
     };
   }
 
-  return storeResult(user, `[video] ${prompt}`, video, remaining);
+  return storeResult(user, `[video] ${prompt}`, video, gate.remaining);
 }
