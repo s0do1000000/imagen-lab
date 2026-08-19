@@ -34,20 +34,28 @@ async function upsertUser(user: TelegramWebAppUser) {
  * requests race, only one can flip false→true and get `true` back here.
  */
 async function claimFreeTrial(telegramId: number, column: FreeTrialColumn): Promise<boolean> {
-  const { data } = await supabaseServer()
+  const { data, error } = await supabaseServer()
     .from("users")
     .update({ [column]: true })
     .eq("telegram_id", telegramId)
     .eq(column, false)
     .select("telegram_id")
     .maybeSingle();
+
+  if (error) {
+    console.error(`claimFreeTrial(${column}) failed:`, error);
+    return false;
+  }
   return data !== null;
 }
 
 /** Un-claims a free trial — used when our own generation failed, so the
  * user's one free try isn't wasted on our error. */
 async function revertFreeTrial(telegramId: number, column: FreeTrialColumn): Promise<void> {
-  await supabaseServer().from("users").update({ [column]: false }).eq("telegram_id", telegramId);
+  const { error } = await supabaseServer().from("users").update({ [column]: false }).eq("telegram_id", telegramId);
+  if (error) {
+    console.error(`revertFreeTrial(${column}) failed:`, error);
+  }
 }
 
 /**
